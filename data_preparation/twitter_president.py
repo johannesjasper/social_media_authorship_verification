@@ -12,23 +12,19 @@ The script expects two arguments:
 """
 
 import json
+import sys
+
+import storage
 
 
-def read_tuples(file_path, batch_size=100):
-    """ Process a 'cache-*-json' file at `file_path`, yielding a batch of tuples
-    of ("user_id", "tweet_text")
+def read_tuples(file_path):
+    """ Process a 'cache-*-json' file at `file_path`, yielding a batch of
+    tuples of ("user_id", "tweet_text")
     """
     with open(file_path, 'r') as f:
-        batch = []
         for line in f:
             j = json.loads(line)
-            batch.append((j['user']['id_str'], j['text']))
-            if len(batch) >= batch_size:
-                yield batch
-                batch = []
-        if len(batch) > 0:
-            # yield the final batch, that didn't reach a size of batch_size
-            yield batch
+            yield (j['user']['id_str'], j['text'])
 
 
 def clean_tweet(text):
@@ -46,7 +42,9 @@ def clean_tweet(text):
 
 
 if __name__ == "__main__":
-    for b in read_tuples("/home/hannes/Data/twitter_president/cache-test-json"):
-        for t in b:
-            print("{}: {}".format(t[0], clean_tweet(t[1])))
+    source_file = sys.argv[1]
+    out_file = sys.argv[2]
+    db = storage.Storage(out_file)
+    for author_id, tweet_text in read_tuples(source_file):
+        db.insert(author_id, tweet_text)
 
