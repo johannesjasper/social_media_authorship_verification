@@ -17,6 +17,19 @@ import sys
 import storage
 
 
+def count_lines(file_path):
+    """Return the number of lines in a file by counting them"""
+    with open(file_path, 'r') as f:
+        lc = sum(1 for line in f)
+    return lc
+
+
+def print_status(file_name, count, total):
+    """Utility function to report progress"""
+    print("processing {0} [ {1:.0f}% | {2} tweets ]".format(
+        file_name, count/total*100, count), end='\r')
+
+
 def read_tuples(file_path):
     """ Process a 'cache-*-json' file at `file_path`, yielding a batch of
     tuples of ("user_id", "tweet_text")
@@ -45,6 +58,22 @@ if __name__ == "__main__":
     source_file = sys.argv[1]
     out_file = sys.argv[2]
     db = storage.Storage(out_file)
-    for author_id, tweet_text in read_tuples(source_file):
-        db.insert(author_id, tweet_text)
 
+    batch_size = 10000
+    batch = []
+    count = 0
+    total = count_lines(source_file)
+
+    for author_id, tweet_text in read_tuples(source_file):
+        print_status(source_file, count, total)
+        count += 1
+
+        batch.append((author_id, tweet_text))
+        if len(batch) >= batch_size:
+            db.insert_batch(batch)
+            batch = []
+
+    if len(batch) > 0:
+        db.insert_batch(batch)
+
+    print("finished processing {} tweets".format(count))
