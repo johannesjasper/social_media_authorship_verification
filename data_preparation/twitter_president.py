@@ -4,8 +4,7 @@
 Election" dataset [1].
 
 The script expects two arguments:
-- The full path to the input data. All files in the directory should follow the
-  naming pattern 'cache-<number>-json'.
+- The full path an extracted file from the dataset as input.
 - The output file name.
 
 [1] https://old.datahub.io/dataset/twitter-2012-presidential-election
@@ -14,30 +13,15 @@ The script expects two arguments:
 import json
 import sys
 
+from itertools import islice
+
 import storage
 
 
-def count_lines(file_path):
-    """Return the number of lines in a file by counting them"""
-    with open(file_path, 'r') as f:
-        lc = sum(1 for line in f)
-    return lc
-
-
-def print_status(file_name, count, total):
-    """Utility function to report progress"""
-    print("processing {0} [ {1:.0f}% | {2} tweets ]".format(
-        file_name, count/total*100, count), end='\r')
-
-
-def read_tuples(file_path):
-    """ Process a 'cache-*-json' file at `file_path`, yielding a batch of
-    tuples of ("user_id", "tweet_text")
-    """
-    with open(file_path, 'r') as f:
-        for line in f:
-            j = json.loads(line)
-            yield (j['user']['id_str'], j['text'])
+def process_tweet(tweet):
+    j = json.loads(tweet)
+    text = clean_tweet(j['text'])
+    return (j['user']['id_str'], text)
 
 
 def clean_tweet(text):
@@ -54,26 +38,44 @@ def clean_tweet(text):
     return text
 
 
+def read_in_chunks(file_path, n):
+    """ Process a 'cache-*-json' file at `file_path`, yielding a batch of
+    tuples of ("user_id", "tweet_text")
+    """
+    with open(file_path) as fh:
+        while True:
+            lines = list(process_tweet(l) for l in islice(fh, n))
+            if lines:
+                yield lines
+            else:
+                break
+
+
+def count_lines(file_path):
+    """Return the number of lines in a file by counting them"""
+    with open(file_path, 'r') as f:
+        lc = sum(1 for line in f)
+    return lc
+
+
 if __name__ == "__main__":
     source_file = sys.argv[1]
     out_file = sys.argv[2]
     db = storage.Storage(out_file)
 
-    batch_size = 10000
+    batch_size = 50000
     batch = []
     count = 0
     total = count_lines(source_file)
 
-    for author_id, tweet_text in read_tuples(source_file):
-        print_status(source_file, count, total)
-        count += 1
+    print("processing {} samples in '{}'".format(total, source_file))
 
-        batch.append((author_id, tweet_text))
-        if len(batch) >= batch_size:
-            db.insert_batch(batch)
-            batch = []
+    for batch in read_in_chunks(source_file, batch_size):
+        count += len(batch)
+        print("[ {0:.0f}% | {1} tweets ]".format(
+            count/total*100, count), end='\r')
 
-    if len(batch) > 0:
         db.insert_batch(batch)
 
-    print("finished processing {} tweets".format(count))
+    print("\nfinished processing {} tweets".format(count))
+
